@@ -73,7 +73,9 @@ export class SettingsPanel {
         if (state) {
             const now = state.timeline.current;
             faceTime.textContent = formatTime(now, clockSettings);
-            faceDate.textContent = `${formatWeekday(now)}, ${formatDate(now, clockSettings)} · ${timeOfDay(now)} · day ${dayNumber(now, state.timeline.origin)}`;
+            // Non-breaking spaces keep "day 2" and "14 March" from splitting across lines.
+            const date = formatDate(now, clockSettings).replace(/ (?=\S+$)/, '\u00a0');
+            faceDate.textContent = `${formatWeekday(now)}, ${date} · ${timeOfDay(now)} · day\u00a0${dayNumber(now, state.timeline.origin)}`;
             message.textContent = '';
         } else {
             faceTime.textContent = '--:--';

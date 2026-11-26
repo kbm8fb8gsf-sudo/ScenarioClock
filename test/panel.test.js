@@ -59,7 +59,7 @@ describe('SettingsPanel: the clock', () => {
     it('shows the clock of the open chat', () => {
         const { $ } = setup();
         expect($('[data-role="face-time"]').textContent).toBe('9:00 PM');
-        expect($('[data-role="face-date"]').textContent).toBe('Thursday, 14 March 2024 · night · day 1');
+        expect($('[data-role="face-date"]').textContent).toBe('Thursday, 14 March\u00a02024 · night · day\u00a01');
         expect($('[data-role="running"]').hidden).toBe(false);
         expect($('[data-role="stopped"]').hidden).toBe(true);
     });

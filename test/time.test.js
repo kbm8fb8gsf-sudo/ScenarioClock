@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    addMonths, dayNumber, formatDate, formatDuration, formatFull, formatShort, formatTime, fromIso, fromLocalDate,
-    makeTime, minuteOfDay, timeOfDay, timeParts, toIso,
-} from '../src/time.js';
+    addMonths, dayNumber, floorToMinute, formatDate, formatDuration, formatFull, formatShort, formatTime, fromIso,
+    fromLocalDate, makeTime, minuteOfDay, timeOfDay, timeParts, toIso,
+} from '../src/clock/time.js';
 
 describe('time', () => {
     it('round-trips ISO text', () => {
@@ -61,8 +61,20 @@ describe('time', () => {
         expect(dayNumber(makeTime(2024, 3, 1), origin)).toBe(1);
     });
 
+    it('keeps seconds internally but shows and stores whole minutes', () => {
+        const t = makeTime(2024, 3, 14, 21, 42) + 59_000;
+        expect(toIso(t)).toBe('2024-03-14T21:42');
+        expect(minuteOfDay(t)).toBe(21 * 60 + 42);
+        expect(floorToMinute(t)).toBe(makeTime(2024, 3, 14, 21, 42));
+        expect(formatTime(t, { hour24: true })).toBe('21:42');
+        expect(floorToMinute(makeTime(1200, 1, 1, 0, 0) + 30_000)).toBe(makeTime(1200, 1, 1, 0, 0));
+    });
+
     it('describes durations', () => {
         expect(formatDuration(0)).toBe('0 minutes');
+        expect(formatDuration(1_000)).toBe('1 second');
+        expect(formatDuration(-45_000)).toBe('45 seconds');
+        expect(formatDuration(89_000)).toBe('1 minute');
         expect(formatDuration(45 * 60_000)).toBe('45 minutes');
         expect(formatDuration(-(90 * 60_000))).toBe('1 hour 30 minutes');
         expect(formatDuration((2 * 24 * 60 + 3 * 60 + 10) * 60_000)).toBe('2 days 3 hours');

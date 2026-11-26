@@ -12,5 +12,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["*.js", "src/*.js", "test/*.js", "types/*.d.ts"]
+  "include": ["*.js", "src/**/*.js", "test/**/*.js", "types/*.d.ts"]
 }

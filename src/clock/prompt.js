@@ -49,15 +49,32 @@ export function renderTemplate(template, values) {
 }
 
 /**
+ * Which tag instructions go with the clock: none, how to mark time skips, or how to tag every reply.
+ * @typedef {'none' | 'skips' | 'every'} TagHelp
+ */
+
+/**
+ * @param {import('../settings.js').ClockSettings} settings
+ * @param {string | null | undefined} generationType Quiet prompts (summaries and the like) never get instructions.
+ * @returns {TagHelp}
+ */
+export function tagHelpFor(settings, generationType) {
+    if (generationType === 'quiet') return 'none';
+    if (settings.pacing === 'ai') return 'every';
+    return settings.aiTags ? 'skips' : 'none';
+}
+
+/**
  * @param {object} input
  * @param {number} input.time
  * @param {number} input.origin
- * @param {import('./settings.js').Settings} input.settings
- * @param {boolean} input.withTagHelp
+ * @param {import('../settings.js').ClockSettings} input.settings
+ * @param {TagHelp} input.tagHelp
  */
-export function buildPrompt({ time, origin, settings, withTagHelp }) {
+export function buildPrompt({ time, origin, settings, tagHelp }) {
     const values = macroValues(time, origin, settings);
     const parts = [renderTemplate(settings.promptTemplate, values).trim()];
-    if (withTagHelp) parts.push(renderTemplate(settings.tagTemplate, values).trim());
+    if (tagHelp === 'skips') parts.push(renderTemplate(settings.tagTemplate, values).trim());
+    if (tagHelp === 'every') parts.push(renderTemplate(settings.tagEveryTemplate, values).trim());
     return parts.filter(Boolean).join('\n');
 }

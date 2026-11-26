@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createController } from '../src/controller.js';
-import { ClockPanel, describeChange } from '../src/panel.js';
-import { normalizeSettings } from '../src/settings.js';
-import { fromIso } from '../src/time.js';
+import { createController } from '../src/clock/controller.js';
+import { fromIso } from '../src/clock/time.js';
+import { SettingsPanel, describeChange } from '../src/panel.js';
+import { normalizeSettings, withSetting } from '../src/settings.js';
 import HTML from '../settings.html?raw';
 
 function setup({ withClock = true } = {}) {
@@ -12,7 +12,7 @@ function setup({ withClock = true } = {}) {
         chat: [{ mes: 'Hello', is_user: false, extra: {} }],
         /** @type {Record<string, unknown>} */
         chatMetadata: withClock
-            ? { scenario_clock: { start: '2024-03-14T21:00', startIndex: -1, rates: [{ from: 0, minutes: 1 }] } }
+            ? { scenario_clock: { start: '2024-03-14T21:00', startIndex: -1, pacing: [{ from: 0, mode: 'ai', minutes: 1 }] } }
             : {},
         getCurrentChatId: () => 'chat',
         saveMetadata: vi.fn(async () => {}),
@@ -20,13 +20,13 @@ function setup({ withClock = true } = {}) {
         setExtensionPrompt: vi.fn(),
     };
     const now = () => new Date(2026, 0, 2, 3, 4);
-    const controller = createController({ getContext: () => context, getSettings: () => settings, now });
+    const controller = createController({ getContext: () => context, getSettings: () => settings.clock, now });
     const notify = vi.fn();
-    const panel = new ClockPanel({
+    const panel = new SettingsPanel({
         controller,
         getSettings: () => settings,
-        saveSettings: (patch) => {
-            settings = normalizeSettings({ ...settings, ...patch });
+        saveSetting: (path, value) => {
+            settings = withSetting(settings, path, value);
             panel.refresh();
         },
         onClockChanged: () => panel.refresh(),
@@ -36,13 +36,22 @@ function setup({ withClock = true } = {}) {
     });
     panel.mount(document.body, HTML);
     const $ = (/** @type {string} */ selector) => /** @type {HTMLInputElement} */ (document.querySelector(selector));
-    return { panel, context, notify, $, getSettings: () => settings };
+    /**
+     * @param {string} selector
+     * @param {string} value
+     */
+    const choose = (selector, value) => {
+        const select = /** @type {HTMLSelectElement} */ (/** @type {unknown} */ ($(selector)));
+        select.value = value;
+        select.dispatchEvent(new Event('change'));
+    };
+    return { panel, context, notify, $, choose, getSettings: () => settings };
 }
 
 /** Lets the panel's async click handlers finish. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe('ClockPanel', () => {
+describe('SettingsPanel: the clock', () => {
     beforeEach(() => {
         document.body.innerHTML = '';
     });
@@ -93,26 +102,56 @@ describe('ClockPanel', () => {
         expect($('[data-role="face-time"]').textContent).toBe('6:30 PM');
     });
 
-    it('saves settings as they change', () => {
+    it('shows the pacing choices that apply', () => {
+        const { $, choose, getSettings } = setup();
+        const aiTags = $('[data-setting="clock.aiTags"]');
+        expect(aiTags.disabled).toBe(true);
+        expect(aiTags.checked).toBe(true);
+        expect($('[data-role="fixed-minutes"]').hidden).toBe(true);
+        expect($('[data-role="tag-every-template-box"]').hidden).toBe(false);
+        expect($('[data-role="tag-template-box"]').hidden).toBe(true);
+        expect($('[data-role="pacing-help"]').textContent).toContain('ends every reply with a tag');
+
+        choose('[data-setting="clock.pacing"]', 'fixed');
+        expect(getSettings().clock.pacing).toBe('fixed');
+        expect(aiTags.disabled).toBe(false);
+        expect($('[data-role="fixed-minutes"]').hidden).toBe(false);
+        expect($('[data-role="tag-template-box"]').hidden).toBe(false);
+        expect($('[data-role="pacing-help"]').textContent).toBe('Each message adds the same number of minutes. The AI marks time skips with tags.');
+
+        const minutes = $('[data-setting="clock.minutesPerMessage"]');
+        minutes.value = '2.5';
+        minutes.dispatchEvent(new Event('change'));
+        expect(getSettings().clock.minutesPerMessage).toBe(2.5);
+    });
+
+    it('warns when the clock would hurt prompt caching', () => {
+        const { $, choose } = setup();
+        expect($('[data-role="cache-warning"]').hidden).toBe(true);
+        choose('[data-setting="clock.position"]', 'before');
+        expect($('[data-role="cache-warning"]').hidden).toBe(false);
+        expect($('[data-role="depth-box"]').hidden).toBe(true);
+        choose('[data-setting="clock.position"]', 'chat');
+        const depth = $('[data-setting="clock.depth"]');
+        depth.value = '4';
+        depth.dispatchEvent(new Event('change'));
+        expect($('[data-role="cache-warning"]').hidden).toBe(false);
+    });
+
+    it('saves settings as they change and resets templates', () => {
         const { $, getSettings } = setup();
-        const hour24 = $('[data-setting="hour24"]');
+        const hour24 = $('[data-setting="clock.hour24"]');
         hour24.checked = true;
         hour24.dispatchEvent(new Event('change'));
-        expect(getSettings().hour24).toBe(true);
+        expect(getSettings().clock.hour24).toBe(true);
         expect($('[data-role="face-time"]').textContent).toBe('21:00');
 
-        const position = /** @type {HTMLSelectElement} */ (/** @type {unknown} */ ($('[data-setting="position"]')));
-        position.value = 'before';
-        position.dispatchEvent(new Event('change'));
-        expect(getSettings().position).toBe('before');
-        expect($('[data-role="depth-box"]').hidden).toBe(true);
-
-        const template = /** @type {HTMLTextAreaElement} */ (/** @type {unknown} */ ($('[data-setting="promptTemplate"]')));
+        const template = /** @type {HTMLTextAreaElement} */ (/** @type {unknown} */ ($('[data-setting="clock.promptTemplate"]')));
         template.value = 'It is {{scenario_time}}.';
         template.dispatchEvent(new Event('input'));
-        expect(getSettings().promptTemplate).toBe('It is {{scenario_time}}.');
-        $('[data-reset="promptTemplate"]').click();
-        expect(getSettings().promptTemplate).toContain('Story clock');
+        expect(getSettings().clock.promptTemplate).toBe('It is {{scenario_time}}.');
+        $('[data-reset="clock.promptTemplate"]').click();
+        expect(getSettings().clock.promptTemplate).toContain('Story clock');
     });
 
     it('describes changes in both directions', () => {
@@ -120,5 +159,28 @@ describe('ClockPanel', () => {
         const options = { hour24: false, dateOrder: /** @type {const} */ ('dmy') };
         expect(describeChange({ before, after: before - 30 * 60_000 }, options)).toBe("Moved back 30 minutes. It's now Thu 14 Mar, 8:30 PM.");
         expect(describeChange({ before, after: before }, options)).toBe("No change. It's now Thu 14 Mar, 9:00 PM.");
+    });
+});
+
+describe('SettingsPanel: Realism Mode', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    it('switches it and edits its note', () => {
+        const { $, getSettings } = setup();
+        const enabled = $('[data-setting="realism.enabled"]');
+        expect(enabled.checked).toBe(false);
+        enabled.checked = true;
+        enabled.dispatchEvent(new Event('change'));
+        expect(getSettings().realism.enabled).toBe(true);
+
+        const note = /** @type {HTMLTextAreaElement} */ (/** @type {unknown} */ ($('[data-setting="realism.prompt"]')));
+        expect(note.value).toContain('OOC: Realism mode');
+        note.value = '(OOC: Keep it short.)';
+        note.dispatchEvent(new Event('input'));
+        expect(getSettings().realism.prompt).toBe('(OOC: Keep it short.)');
+        $('[data-reset="realism.prompt"]').click();
+        expect(getSettings().realism.prompt).toContain('one line of dialogue and one action only');
     });
 });

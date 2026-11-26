@@ -2,9 +2,11 @@
 /**
  * Story time is a wall-clock reading with no time zone. It's held as a millisecond count and
  * worked out with Date's UTC methods only, so daylight saving and the browser's own time zone
- * can never shift it. Precision is one minute.
+ * can never shift it. It's shown to the minute, but kept to the second so that many short
+ * messages, each taking a few seconds, still add up.
  */
 
+export const SECOND = 1000;
 export const MINUTE = 60_000;
 export const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
@@ -88,9 +90,17 @@ export function startOfDay(time) {
     return Math.floor(time / DAY) * DAY;
 }
 
-/** @param {number} time Minutes since midnight. */
+/** @param {number} time */
+export function floorToMinute(time) {
+    return Math.floor(time / MINUTE) * MINUTE;
+}
+
+/**
+ * Whole minutes since midnight.
+ * @param {number} time
+ */
 export function minuteOfDay(time) {
-    return Math.round((time - startOfDay(time)) / MINUTE);
+    return Math.floor((time - startOfDay(time)) / MINUTE);
 }
 
 /**
@@ -228,12 +238,14 @@ export function dayNumber(time, origin) {
 }
 
 /**
- * "2 days 3 hours", "45 minutes", "1 hour 5 minutes". Used in notices, not in prompts.
+ * "2 days 3 hours", "45 minutes", "1 hour 5 minutes", "20 seconds". Used in notices and
+ * tooltips, not in prompts.
  * @param {number} ms May be negative; the sign is dropped.
  */
 export function formatDuration(ms) {
-    let minutes = Math.round(Math.abs(ms) / MINUTE);
-    if (minutes === 0) return '0 minutes';
+    const seconds = Math.round(Math.abs(ms) / SECOND);
+    if (seconds < 60) return seconds === 0 ? '0 minutes' : plural(seconds, 'second');
+    let minutes = Math.round(seconds / 60);
     const days = Math.floor(minutes / (24 * 60));
     minutes -= days * 24 * 60;
     const hours = Math.floor(minutes / 60);

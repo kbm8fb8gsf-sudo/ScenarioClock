@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { PROMPT_KEY, createController } from '../src/controller.js';
-import { DEFAULT_PROMPT, DEFAULT_TAG_HELP, normalizeSettings } from '../src/settings.js';
-import { buildPrompt, renderTemplate } from '../src/prompt.js';
-import { fromIso, toIso } from '../src/time.js';
+import { PROMPT_KEY, createController } from '../src/clock/controller.js';
+import { buildPrompt, renderTemplate, tagHelpFor } from '../src/clock/prompt.js';
+import { fromIso, toIso } from '../src/clock/time.js';
+import { DEFAULT_CLOCK_PROMPT, DEFAULT_TAG_EVERY, DEFAULT_TAG_HELP, normalizeClockSettings } from '../src/settings.js';
 
 /**
  * @param {{ chat?: any[], metadata?: Record<string, unknown> | undefined, chatId?: string | undefined }} [options]
@@ -31,12 +31,11 @@ function fakeContext({ chat = [], metadata = {}, chatId = 'chat-1' } = {}) {
  * @param {Record<string, unknown>} [settings]
  */
 function setup(context, settings = {}) {
-    const controller = createController({
+    return createController({
         getContext: () => context,
-        getSettings: () => normalizeSettings(settings),
+        getSettings: () => normalizeClockSettings(settings),
         now: () => new Date(2026, 10, 25, 13, 7),
     });
-    return controller;
 }
 
 /** @param {ReturnType<typeof fakeContext>} context */
@@ -49,22 +48,26 @@ const ai = (mes) => ({ mes, is_user: false, extra: {} });
 /** @param {string} mes */
 const user = (mes) => ({ mes, is_user: true, extra: {} });
 
+const FIXED_CLOCK = { start: '2024-03-14T21:00', startIndex: -1, pacing: [{ from: 0, mode: 'fixed', minutes: 1 }] };
+
 describe('starting a clock', () => {
-    it('auto-starts a new chat at the real time, before the greeting', async () => {
+    it('auto-starts a new chat at the real time, before the greeting, with the chosen pacing', async () => {
         const context = fakeContext({ chat: [ai('Hello!')] });
         const controller = setup(context);
         expect(await controller.autoStart()).toBe(true);
         expect(context.chatMetadata.scenario_clock).toEqual({
-            start: '2026-11-25T13:07', startIndex: -1, rates: [{ from: 0, minutes: 1 }],
+            start: '2026-11-25T13:07', startIndex: -1, pacing: [{ from: 0, mode: 'ai', minutes: 1 }],
         });
         expect(await controller.autoStart()).toBe(false);
     });
 
-    it('uses the fixed start time when chosen', async () => {
+    it('uses the fixed start time and pacing when chosen', async () => {
         const context = fakeContext({ chat: [ai('Hello!')] });
-        const controller = setup(context, { startMode: 'fixed', fixedStart: '1999-12-31T23:00', minutesPerMessage: 3 });
+        const controller = setup(context, { startMode: 'fixed', fixedStart: '1999-12-31T23:00', pacing: 'fixed', minutesPerMessage: 3 });
         await controller.autoStart();
-        expect(context.chatMetadata.scenario_clock).toMatchObject({ start: '1999-12-31T23:00', rates: [{ from: 0, minutes: 3 }] });
+        expect(context.chatMetadata.scenario_clock).toMatchObject({
+            start: '1999-12-31T23:00', pacing: [{ from: 0, mode: 'fixed', minutes: 3 }],
+        });
     });
 
     it('auto-starts a new group chat with several greetings', async () => {
@@ -99,64 +102,71 @@ describe('starting a clock', () => {
 });
 
 describe('the prompt', () => {
-    const clock = { start: '2024-03-14T21:00', startIndex: -1, rates: [{ from: 0, minutes: 1 }] };
-
-    it('tells the AI the time after the latest message, with the tag instructions', () => {
-        const context = fakeContext({ chat: [ai('Hi'), user('[TIME: +2h] Later')], metadata: { scenario_clock: clock } });
+    it('tells the AI the time, and asks for a tag in every reply by default', () => {
+        const context = fakeContext({ chat: [ai('Hi'), user('[TIME: +2h] Later')], metadata: { scenario_clock: FIXED_CLOCK } });
         setup(context).updatePrompt('normal');
         const prompt = lastPrompt(context);
         expect(prompt).toMatchObject({ key: PROMPT_KEY, position: 1, depth: 0, role: 0 });
         expect(prompt?.value).toContain('it is 11:00 PM on Thursday, 14 March 2024 (night), day 1 of the story');
-        expect(prompt?.value).toContain('[TIME: +20m]');
+        expect(prompt?.value).toContain('End every reply with a time tag');
+    });
+
+    it('asks only for time skips with the other pacings', () => {
+        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: FIXED_CLOCK } });
+        setup(context, { pacing: 'length' }).updatePrompt('normal');
+        expect(lastPrompt(context)?.value).toContain('[TIME: +20m]');
+        expect(lastPrompt(context)?.value).not.toContain('End every reply');
     });
 
     it('leaves out the message being swiped away', () => {
-        const context = fakeContext({ chat: [ai('Hi'), ai('[TIME: +8h] Morning')], metadata: { scenario_clock: clock } });
+        const context = fakeContext({ chat: [ai('Hi'), ai('[TIME: +8h] Morning')], metadata: { scenario_clock: FIXED_CLOCK } });
         setup(context).updatePrompt('swipe');
         expect(lastPrompt(context)?.value).toContain('it is 9:00 PM');
     });
 
     it('drops the tag instructions for quiet prompts (summaries and the like)', () => {
-        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: clock } });
+        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: FIXED_CLOCK } });
         setup(context).updatePrompt('quiet');
         expect(lastPrompt(context)?.value).toContain('Story clock');
         expect(lastPrompt(context)?.value).not.toContain('[TIME:');
     });
 
-    it('drops them when the AI may not move the clock', () => {
-        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: clock } });
-        setup(context, { aiTags: false }).updatePrompt('normal');
+    it('drops them when the AI may not skip time (unless it tags every reply)', () => {
+        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: FIXED_CLOCK } });
+        setup(context, { pacing: 'fixed', aiTags: false }).updatePrompt('normal');
         expect(lastPrompt(context)?.value).not.toContain('[TIME:');
+        expect(tagHelpFor(normalizeClockSettings({ pacing: 'ai', aiTags: false }), 'normal')).toBe('every');
     });
 
-    it('is cleared when there is no clock or the extension is off', () => {
+    it('is cleared when there is no clock or the clock is off', () => {
         const noClock = fakeContext({ chat: [ai('Hi')] });
         setup(noClock).updatePrompt();
         expect(lastPrompt(noClock)?.value).toBe('');
 
-        const off = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: clock } });
+        const off = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: FIXED_CLOCK } });
         setup(off, { enabled: false }).updatePrompt();
         expect(lastPrompt(off)?.value).toBe('');
     });
 
     it('follows the position, depth and role settings', () => {
-        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: clock } });
+        const context = fakeContext({ chat: [ai('Hi')], metadata: { scenario_clock: FIXED_CLOCK } });
         setup(context, { position: 'before', depth: 4, role: 'assistant' }).updatePrompt();
         expect(lastPrompt(context)).toMatchObject({ position: 2, depth: 4, role: 2 });
     });
 
     it('gives macro values that follow the generation type', () => {
-        const context = fakeContext({ chat: [ai('Hi'), ai('[TIME: +1d]')], metadata: { scenario_clock: clock } });
+        const context = fakeContext({ chat: [ai('Hi'), ai('[TIME: +1d]')], metadata: { scenario_clock: FIXED_CLOCK } });
         const controller = setup(context);
         expect(controller.currentMacroValues()?.scenario_day).toBe('2');
         controller.setGenerationType('swipe');
+        expect(controller.getGenerationType()).toBe('swipe');
         expect(controller.currentMacroValues()?.scenario_day).toBe('1');
         expect(controller.currentMacroValues()?.scenario_iso).toBe('2024-03-14T21:00');
     });
 });
 
 describe('manual changes', () => {
-    const clock = { start: '2024-03-14T21:00', startIndex: -1, rates: [{ from: 0, minutes: 0 }] };
+    const clock = { start: '2024-03-14T21:00', startIndex: -1, pacing: [{ from: 0, mode: 'fixed', minutes: 0 }] };
 
     it('stores the change on the latest message and its swipe', async () => {
         const last = { ...ai('Night falls.'), swipe_id: 0, swipe_info: [{ extra: {} }] };
@@ -198,23 +208,23 @@ describe('manual changes', () => {
 });
 
 describe('housekeeping', () => {
-    it('changes minutes-per-message for future messages only', async () => {
-        const context = fakeContext({
-            chat: [ai('a'), ai('b')],
-            metadata: { scenario_clock: { start: '2024-03-14T21:00', startIndex: -1, rates: [{ from: 0, minutes: 1 }] } },
+    it('brings a chat in line with changed pacing settings, for future messages only', async () => {
+        const context = fakeContext({ chat: [ai('a'), ai('b')], metadata: { scenario_clock: FIXED_CLOCK } });
+        const controller = setup(context, { pacing: 'fixed', minutesPerMessage: 10 });
+        expect(await controller.syncPacing()).toBe(true);
+        expect(context.chatMetadata.scenario_clock).toMatchObject({
+            pacing: [{ from: 0, mode: 'fixed', minutes: 1 }, { from: 2, mode: 'fixed', minutes: 10 }],
         });
-        const controller = setup(context);
-        await controller.setMinutesPerMessage(10);
-        expect(controller.minutesPerMessage()).toBe(10);
         expect(toIso(controller.state()?.timeline.current ?? 0)).toBe('2024-03-14T21:01');
         context.chat.push(ai('c'));
         expect(toIso(controller.state()?.timeline.current ?? 0)).toBe('2024-03-14T21:11');
+        expect(await controller.syncPacing()).toBe(false);
     });
 
     it('repairs the clock after messages before its start are deleted', async () => {
         const context = fakeContext({
             chat: [ai('a'), ai('b')],
-            metadata: { scenario_clock: { start: '2024-03-14T21:00', startIndex: 5, rates: [{ from: 0, minutes: 1 }] } },
+            metadata: { scenario_clock: { ...FIXED_CLOCK, startIndex: 5 } },
         });
         const controller = setup(context);
         expect(await controller.repair()).toBe(true);
@@ -229,21 +239,16 @@ describe('templates', () => {
             .toBe('{{user}} at 9:00 AM {{scenario_nope}}');
     });
 
-    it('builds the default prompt', () => {
+    it('builds the default prompt with either kind of instructions', () => {
         const time = /** @type {number} */ (fromIso('2024-03-15T07:30'));
         const origin = /** @type {number} */ (fromIso('2024-03-14T21:00'));
-        const text = buildPrompt({ time, origin, settings: normalizeSettings({ hour24: true }), withTagHelp: true });
-        expect(text.split('\n')).toEqual([
-            renderTemplate(DEFAULT_PROMPT, {
-                scenario_time: '07:30', scenario_weekday: 'Friday', scenario_date: '15 March 2024',
-                scenario_timeofday: 'early morning', scenario_day: '2',
-            }),
-            DEFAULT_TAG_HELP,
-        ]);
-    });
-
-    it('repairs bad settings', () => {
-        expect(normalizeSettings({ depth: '-3', tagDisplay: 'nope', fixedStart: 'x', minutesPerMessage: 99999 }))
-            .toMatchObject({ depth: 0, tagDisplay: 'hide', fixedStart: '2025-06-01T09:00', minutesPerMessage: 1440 });
+        const settings = normalizeClockSettings({ hour24: true });
+        const clockLine = renderTemplate(DEFAULT_CLOCK_PROMPT, {
+            scenario_time: '07:30', scenario_weekday: 'Friday', scenario_date: '15 March 2024',
+            scenario_timeofday: 'early morning', scenario_day: '2',
+        });
+        expect(buildPrompt({ time, origin, settings, tagHelp: 'every' }).split('\n')).toEqual([clockLine, DEFAULT_TAG_EVERY]);
+        expect(buildPrompt({ time, origin, settings, tagHelp: 'skips' }).split('\n')).toEqual([clockLine, DEFAULT_TAG_HELP]);
+        expect(buildPrompt({ time, origin, settings, tagHelp: 'none' })).toBe(clockLine);
     });
 });

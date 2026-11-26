@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyInstructionText, parseInstruction } from '../src/instructions.js';
-import { fromIso, toIso } from '../src/time.js';
+import { applyInstructionText, parseInstruction } from '../src/clock/instructions.js';
+import { fromIso, toIso } from '../src/clock/time.js';
 
 /** Thursday 14 March 2024, 9:42 PM. */
 const NOW = /** @type {number} */ (fromIso('2024-03-14T21:42'));
@@ -69,6 +69,12 @@ describe('clock times', () => {
         expect(apply('tomorrow 9am', smallHours)).toBe('2024-03-15T09:00');
         expect(apply('tomorrow morning', smallHours)).toBe('2024-03-15T08:00');
         expect(apply('tomorrow', smallHours)).toBe('2024-03-16T01:30');
+    });
+
+    it("doesn't skip a day when the clock is a few seconds past the time asked for", () => {
+        const justAfter = /** @type {number} */ (fromIso('2024-03-15T07:30')) + 20_000;
+        expect(apply('07:30', justAfter)).toBe('2024-03-15T07:30');
+        expect(apply('07:29', justAfter)).toBe('2024-03-16T07:29');
     });
 
     it('rolls forward from an early-morning start too', () => {

@@ -18,7 +18,7 @@
  */
 
 import {
-    DAY, MINUTE, addMonths, isInRange, makeTime, minuteOfDay, startOfDay, timeParts, validTime,
+    DAY, MINUTE, addMonths, floorToMinute, isInRange, makeTime, minuteOfDay, startOfDay, timeParts, validTime,
 } from './time.js';
 
 /**
@@ -215,7 +215,8 @@ export function applyInstruction(instruction, now) {
 
     if (clock !== null) {
         let candidate = startOfDay(moved) + clock * MINUTE;
-        if (!dayJump && candidate < moved) candidate += DAY;
+        // Compare whole minutes: the clock may be a few seconds past 07:30 when "07:30" is asked for.
+        if (!dayJump && candidate < floorToMinute(moved)) candidate += DAY;
         return inRange(candidate);
     }
 

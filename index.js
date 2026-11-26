@@ -1,22 +1,32 @@
 // @ts-check
 /**
- * Scenario Clock: keeps the story's own date and time for each chat and tells the AI on every
- * generation, so the time survives long chats and summaries.
+ * SillyTweaks: small additions to SillyTavern.
+ *
+ *  - Scenario Clock keeps the story's own date and time for each chat and tells the AI on every
+ *    generation, so the time survives long chats and summaries.
+ *  - Realism Mode asks for one line of dialogue and one action per reply.
  *
  * This file is the only one that talks to SillyTavern. SillyTavern loads it, then calls the
  * exported `onActivate` hook named in manifest.json. Verified against SillyTavern 1.19.
  */
 
-import { createController } from './src/controller.js';
-import { createChatDecorator } from './src/dom.js';
-import { ClockPanel, describeChange } from './src/panel.js';
-import { MACROS } from './src/prompt.js';
-import { SETTINGS_KEY, normalizeSettings } from './src/settings.js';
-import { formatFull, formatShort, fromIso, fromLocalDate, toIso } from './src/time.js';
-import { timeAfter } from './src/timeline.js';
+import { createController } from './src/clock/controller.js';
+import { createChatDecorator } from './src/clock/decorations.js';
+import { MACROS } from './src/clock/prompt.js';
+import { formatDuration, formatFull, formatShort, fromIso, fromLocalDate, toIso } from './src/clock/time.js';
+import { timeAfter } from './src/clock/timeline.js';
+import { SettingsPanel, describeChange } from './src/panel.js';
+import { addMenuToggle, applyRealismPrompt, nextRealismState, showRealismState } from './src/realism.js';
+import { SETTINGS_KEY, readSettings, withSetting } from './src/settings.js';
 
-const LOG_PREFIX = '[Scenario Clock]';
+const LOG_PREFIX = '[SillyTweaks]';
 const TEMPLATE_URL = new URL('./settings.html', import.meta.url);
+
+/**
+ * If the extension is installed twice (say, as "ScenarioClock" and "SillyTweaks"), only the copy
+ * that loads first runs; the other just warns.
+ */
+const IS_DUPLICATE = Boolean(/** @type {any} */ (globalThis).sillyTweaks);
 
 /** @returns {STContext} */
 function ctx() {
@@ -24,19 +34,27 @@ function ctx() {
 }
 
 function getSettings() {
-    return normalizeSettings(ctx().extensionSettings[SETTINGS_KEY]);
+    return readSettings(ctx().extensionSettings);
 }
 
-/** @param {Partial<import('./src/settings.js').Settings>} patch */
-function saveSettings(patch) {
-    ctx().extensionSettings[SETTINGS_KEY] = normalizeSettings({ ...getSettings(), ...patch });
+/**
+ * @param {string} path e.g. 'clock.hour24'
+ * @param {unknown} value
+ */
+function saveSetting(path, value) {
+    const before = getSettings();
+    const after = withSetting(before, path, value);
+    ctx().extensionSettings[SETTINGS_KEY] = after;
     ctx().saveSettingsDebounced();
+    if (after.clock.pacing !== before.clock.pacing || after.clock.minutesPerMessage !== before.clock.minutesPerMessage) {
+        void syncPacing();
+    }
     refreshAll();
 }
 
-const controller = createController({ getContext: () => ctx(), getSettings });
+const controller = createController({ getContext: () => ctx(), getSettings: () => getSettings().clock });
 
-/** @type {ClockPanel | null} */
+/** @type {SettingsPanel | null} */
 let panel = null;
 /** @type {ReturnType<typeof createChatDecorator> | null} */
 let decorator = null;
@@ -45,21 +63,48 @@ let wandLabel = null;
 
 /**
  * Runs just before SillyTavern builds each prompt (named in manifest.json). Swipes and quiet
- * generations need a slightly different text, so it's worked out here rather than only on events.
+ * generations need slightly different text, so it's worked out here rather than only on events.
  * @param {unknown[]} _chat
  * @param {number} _contextSize
  * @param {(immediately: boolean) => void} _abort
  * @param {string} [type]
  */
-globalThis.scenarioClockInterceptor = async function (_chat, _contextSize, _abort, type) {
+async function interceptor(_chat, _contextSize, _abort, type) {
     try {
         const generationType = type || 'normal';
         controller.setGenerationType(generationType);
         controller.updatePrompt(generationType);
+        applyRealismPrompt(ctx().setExtensionPrompt, getSettings().realism, generationType);
     } catch (error) {
-        console.error(LOG_PREFIX, 'Could not add the time to the prompt', error);
+        console.error(LOG_PREFIX, 'Could not update the prompt', error);
     }
-};
+}
+
+if (!IS_DUPLICATE) {
+    globalThis.sillyTweaksInterceptor = interceptor;
+    /** @type {any} */ (globalThis).sillyTweaks = {
+        version: '0.2.0',
+        clock: {
+            /** The story time after the latest message, as "YYYY-MM-DDTHH:MM", or null. */
+            now: () => {
+                const state = controller.state();
+                return state ? toIso(state.timeline.current) : null;
+            },
+            /** @param {number} index */
+            timeAfterMessage: (index) => {
+                const state = controller.state();
+                return state ? toIso(timeAfter(ctx().chat, state.clock, index)) : null;
+            },
+            /** @param {string} text e.g. "+2h" */
+            adjust: (text) => controller.adjust(text).finally(refreshAll),
+        },
+        realism: {
+            isOn: () => getSettings().realism.enabled,
+            /** @param {boolean} on */
+            set: (on) => saveSetting('realism.enabled', Boolean(on)),
+        },
+    };
+}
 
 /**
  * @param {string} message
@@ -70,7 +115,7 @@ function notify(message, level = 'info') {
         /** @type {any} */ (globalThis).toastr
     );
     const show = toastr?.[level];
-    if (show) show(message, 'Scenario Clock');
+    if (show) show(message, 'SillyTweaks');
     else console.log(LOG_PREFIX, message);
 }
 
@@ -81,9 +126,20 @@ async function confirmPopup(message) {
     return result === c.POPUP_RESULT.AFFIRMATIVE;
 }
 
+async function syncPacing() {
+    try {
+        await controller.syncPacing();
+    } catch (error) {
+        console.error(LOG_PREFIX, 'Could not update the pacing', error);
+    }
+}
+
 function refreshAll() {
     try {
+        const settings = getSettings();
         controller.updatePrompt();
+        applyRealismPrompt(ctx().setExtensionPrompt, settings.realism, controller.getGenerationType());
+        showRealismState(document, settings.realism.enabled);
         panel?.refresh();
         decorator?.refresh();
         refreshWand();
@@ -94,22 +150,25 @@ function refreshAll() {
 
 /** What the chat decorations need: the time after each message, and how to show it. */
 function chatView() {
-    const settings = getSettings();
+    const settings = getSettings().clock;
     const state = settings.enabled ? controller.state() : null;
     return {
         enabled: settings.enabled,
         tagDisplay: settings.tagDisplay,
         times: state && settings.showOnMessages ? state.timeline.times : null,
-        formatStamp: (/** @type {number} */ time) => ({
-            text: formatShort(time, settings),
-            title: `Story time after this message: ${formatFull(time, settings)}`,
-        }),
+        formatStamp: (/** @type {number} */ time, /** @type {number | null} */ previous) => {
+            const moved = previous === null ? '' : ` (${time >= previous ? '+' : '-'}${formatDuration(time - previous)})`;
+            return {
+                text: formatShort(time, settings),
+                title: `Story time after this message: ${formatFull(time, settings)}${moved}`,
+            };
+        },
     };
 }
 
 function refreshWand() {
     if (!wandLabel) return;
-    const settings = getSettings();
+    const settings = getSettings().clock;
     const state = settings.enabled ? controller.state() : null;
     wandLabel.textContent = state ? `Clock: ${formatShort(state.timeline.current, settings)}` : 'Scenario Clock';
 }
@@ -118,7 +177,7 @@ async function promptForChange() {
     const c = ctx();
     if (!controller.state()) {
         notify(controller.hasChat()
-            ? "This chat doesn't have a clock yet. Start one in Extensions → Scenario Clock."
+            ? "This chat doesn't have a clock yet. Start one in Extensions → SillyTweaks."
             : 'Open a chat first.', 'warning');
         return;
     }
@@ -131,7 +190,7 @@ async function promptForChange() {
     if (typeof answer !== 'string' || !answer.trim()) return;
     try {
         const change = await controller.adjust(answer);
-        notify(describeChange(change, getSettings()), 'success');
+        notify(describeChange(change, getSettings().clock), 'success');
     } catch (error) {
         notify(error instanceof Error ? error.message : String(error), 'error');
     }
@@ -140,9 +199,9 @@ async function promptForChange() {
 
 function addWandButton() {
     const menu = document.getElementById('extensionsMenu');
-    if (!menu || document.getElementById('scenario_clock_wand')) return;
+    if (!menu || document.getElementById('sillytweaks_clock_wand')) return;
     const button = document.createElement('div');
-    button.id = 'scenario_clock_wand';
+    button.id = 'sillytweaks_clock_wand';
     button.className = 'list-group-item flex-container flexGap5 interactable';
     button.tabIndex = 0;
     button.title = 'Move or set the story clock';
@@ -153,6 +212,11 @@ function addWandButton() {
     button.addEventListener('click', () => void promptForChange());
     menu.append(button);
     refreshWand();
+}
+
+function addRealismToggle() {
+    const item = addMenuToggle(document, () => saveSetting('realism.enabled', !getSettings().realism.enabled));
+    if (!item) console.warn(LOG_PREFIX, "Couldn't find SillyTavern's options menu for the Realism Mode switch");
 }
 
 function registerMacros() {
@@ -188,7 +252,7 @@ function registerSlashCommands() {
             if (text) {
                 const change = await controller.adjust(text);
                 refreshAll();
-                if (args['quiet'] !== 'true') notify(describeChange(change, getSettings()), 'success');
+                if (args['quiet'] !== 'true') notify(describeChange(change, getSettings().clock), 'success');
             }
             const values = controller.currentMacroValues();
             if (!values) return '';
@@ -261,7 +325,31 @@ function registerSlashCommands() {
             refreshAll();
             return '';
         },
-        helpString: "<div>Removes the story clock from the current chat. The AI is no longer told the time there.</div>",
+        helpString: '<div>Removes the story clock from the current chat. The AI is no longer told the time there.</div>',
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'realism',
+        callback: async (/** @type {Record<string, unknown>} */ _args, /** @type {unknown} */ value) => {
+            const current = getSettings().realism.enabled;
+            const next = nextRealismState(String(value ?? ''), current);
+            if (next === null) throw new Error('Use /realism on, /realism off, /realism toggle or /realism status.');
+            if (next !== current) {
+                saveSetting('realism.enabled', next);
+                notify(`Realism Mode ${next ? 'on' : 'off'}.`, 'info');
+            }
+            return next ? 'on' : 'off';
+        },
+        unnamedArgumentList: [
+            SlashCommandArgument.fromProps({
+                description: 'on, off, toggle (the default) or status',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: false,
+                enumList: ['on', 'off', 'toggle', 'status'],
+            }),
+        ],
+        returns: '"on" or "off"',
+        helpString: '<div>Turns Realism Mode on or off: each reply is asked for one line of dialogue and one action. With no argument, switches it. <code>/realism status</code> only reports it.</div>',
     }));
 }
 
@@ -283,6 +371,7 @@ function bindEvents() {
         try {
             await controller.repair();
             if (await controller.autoStart()) console.debug(LOG_PREFIX, 'Started a clock for the new chat');
+            await controller.syncPacing();
         } catch (error) {
             console.error(LOG_PREFIX, error);
         }
@@ -320,6 +409,14 @@ function bindEvents() {
             refreshAll();
         });
     }
+
+    on(c, 'APP_READY', 'app_ready', warnAboutOldScenarioClock);
+}
+
+/** Scenario Clock 0.1 (this extension's old name) would run alongside and double everything up. */
+function warnAboutOldScenarioClock() {
+    if (typeof (/** @type {any} */ (globalThis).scenarioClockInterceptor) !== 'function') return;
+    notify('The old Scenario Clock extension is also installed. SillyTweaks includes it, so delete Scenario Clock in Extensions → Manage extensions.', 'warning');
 }
 
 async function mountPanel() {
@@ -327,10 +424,10 @@ async function mountPanel() {
     if (!container) return;
     const response = await fetch(TEMPLATE_URL);
     const html = await response.text();
-    panel = new ClockPanel({
+    panel = new SettingsPanel({
         controller,
         getSettings,
-        saveSettings,
+        saveSetting,
         onClockChanged: refreshAll,
         notify,
         confirm: confirmPopup,
@@ -347,8 +444,16 @@ function startDecorator() {
 
 /** Hook named in manifest.json; SillyTavern calls it once the extension has loaded. */
 export async function onActivate() {
+    if (IS_DUPLICATE) {
+        const message = 'SillyTweaks is installed twice. Delete one copy in Extensions → Manage extensions.';
+        console.warn(LOG_PREFIX, message);
+        notify(message, 'warning');
+        return;
+    }
     const c = ctx();
+    const firstRun = !(SETTINGS_KEY in c.extensionSettings);
     c.extensionSettings[SETTINGS_KEY] = getSettings();
+    if (firstRun) c.saveSettingsDebounced();
 
     try {
         await mountPanel();
@@ -357,6 +462,7 @@ export async function onActivate() {
     }
     startDecorator();
     addWandButton();
+    addRealismToggle();
     bindEvents();
     try {
         registerSlashCommands();
@@ -367,18 +473,3 @@ export async function onActivate() {
     refreshAll();
     console.log(LOG_PREFIX, 'Loaded.');
 }
-
-// Exposed for other extensions and STscript users.
-/** @type {any} */ (globalThis).scenarioClock = {
-    /** The story time after the latest message, as "YYYY-MM-DDTHH:MM", or null. */
-    now: () => {
-        const state = controller.state();
-        return state ? toIso(state.timeline.current) : null;
-    },
-    /** @param {number} index */
-    timeAfterMessage: (index) => {
-        const state = controller.state();
-        return state ? toIso(timeAfter(ctx().chat, state.clock, index)) : null;
-    },
-    adjust: (/** @type {string} */ text) => controller.adjust(text).finally(refreshAll),
-};

@@ -1,48 +1,63 @@
-# Scenario Clock
+# SillyTweaks
 
-A SillyTavern extension that keeps the date and time *inside your story* and tells the AI on every reply. Models are bad at keeping track of story time over a long chat, and once older messages are summarised the time is usually lost completely. Scenario Clock works the time out from the chat itself and adds it to every prompt, e.g.:
+Small additions to [SillyTavern](https://github.com/SillyTavern/SillyTavern):
 
-> [Story clock: it is 9:42 PM on Thursday, 14 March 2024 (night), day 3 of the story. This is the correct current time and date; it overrides any other time or date in the chat history or its summaries.]
-
-Each chat has its own clock. The AI moves it forward by adding short tags such as `[TIME: +3h]` to its replies. The extension does the calendar maths (weekdays, month ends, leap years), which models get wrong.
+- **Scenario Clock** keeps the date and time *inside your story* and tells the AI on every reply, so the time stays right over long chats and after summaries.
+- **Realism Mode** asks the AI for one line of dialogue and one action per reply, so the chat flows like a real conversation. Switch it on and off from the ☰ menu, next to Regenerate and Continue.
 
 ## Install
 
 Needs SillyTavern 1.19 or newer.
 
 1. In SillyTavern, open **Extensions** (the cubes icon) → **Install extension**.
-2. Paste `https://github.com/kbm8fb8gsf-sudo/ScenarioClock` and click **Install**.
+2. Paste `https://github.com/kbm8fb8gsf-sudo/SillyTweaks` and click **Install**.
 
-The browser console shows `[Scenario Clock] Loaded.` and **Extensions** gets a **Scenario Clock** section.
+**Extensions** gets a **SillyTweaks** section, and the browser console shows `[SillyTweaks] Loaded.`
 
-To update later, use the update button next to Scenario Clock in **Extensions → Manage extensions**.
+To update later, use the update button next to SillyTweaks in **Extensions → Manage extensions**.
+
+**Already installed Scenario Clock?** SillyTweaks is its new name. Don't install it again: click the update button next to Scenario Clock instead. Your settings and your chats' clocks carry over. If you do end up with both, SillyTweaks shows a warning; delete the old one.
 
 Or install it by hand:
 
 ```sh
 cd SillyTavern/data/default-user/extensions   # or your user's folder
-git clone https://github.com/kbm8fb8gsf-sudo/ScenarioClock
+git clone https://github.com/kbm8fb8gsf-sudo/SillyTweaks
 ```
 
-## Using it
+## Scenario Clock
 
-**New chats get a clock automatically.** By default it starts at the real date and time. You can choose a fixed start instead in the settings, or set the time in the panel. A character can set its own scene: put a tag like `[TIME: 1889-10-04 18:00]` in its greeting.
+Models are bad at keeping track of story time over a long chat, and once older messages are summarised the time is usually lost completely. Scenario Clock works the time out from the chat itself and adds it to every prompt:
 
-**Existing chats** start without a clock. Open **Extensions → Scenario Clock**, pick the story's current date and time, and click **Start clock**.
+> [Story clock: it is 9:42 PM on Thursday, 14 March 2024 (night), day 3 of the story. This is the correct current time and date; it overrides any other time or date in the chat history or its summaries.]
 
-**Time moves in three ways:**
+Each chat has its own clock. The AI moves it with short tags such as `[TIME: +5m]` or `[TIME: +3h]`. The extension does the calendar maths (weekdays, month ends, leap years), which models get wrong.
 
-1. **The AI adds time tags.** It's told how to (you can turn this off). For example: *"[TIME: +8h] The morning sun spills through the curtains…"* Tags are hidden in the chat by default, but stay in the message text. Edit a message and you'll see them, and can change them.
-2. **You add time tags** in your own messages the same way: *"[TIME: +1h] I wait outside the café."*
-3. **You move it by hand** with the panel's buttons and box, the **Clock** entry in the wand (✨) menu, or `/clock`.
+**New chats get a clock automatically.** By default it starts at the real date and time. You can choose a fixed start in the settings, or set the time in the panel. A character can set its own scene: put a tag like `[TIME: 1889-10-04 18:00]` in its greeting.
 
-Any message without a tag adds 1 minute, so a long conversation slowly moves the clock. You can change this per chat, or set the default for new clocks.
+**Existing chats** start without a clock. Open **Extensions → SillyTweaks**, pick the story's current date and time, and click **Start clock**.
+
+### How time passes
+
+Choose under **How time passes**:
+
+| Setting | What happens between time skips |
+|---|---|
+| **The AI's estimate, in every reply** (default) | The AI ends every reply with a tag saying how much time it took: `[TIME: +1m]` for a few quick lines, `[TIME: +15m]` for a longer scene. It judges from what actually happens, so a long reply can move the clock more than a short one. Your own messages add no time; the AI's next tag covers them. A reply that forgets its tag is timed from its length instead. |
+| **Each message's length** | Every message adds about the time its words take to play out (around 120 words a minute), so longer messages move the clock more. No tags needed. |
+| **A fixed amount per message** | Every message adds the same number of minutes. |
+
+With the last two, the AI can still skip time with a tag when the story jumps (you can turn that off). With any of them, you can add tags to your own messages too: *"[TIME: +1h] I wait outside the café."*
+
+Changing this applies to new messages only. Times already shown never move.
+
+You can also move the clock by hand: with the panel's buttons and box, the **Clock** entry in the wand (✨) menu, or `/clock`.
+
+Tags are hidden in the chat by default, but stay in the message text. Edit a message and you'll see them, and can change them. Each message's header shows the story time just after it (🕒 *Thu 14 Mar, 9:42 PM*); hover over it to see how much time that message took.
 
 Because the clock is worked out from the messages every time, it follows the chat. If you delete messages, the clock goes back. If you edit a tag or swipe to another reply, the clock changes with it. Branches keep the time they branched at. A change you make by hand belongs to the latest message. If you delete that message or swipe to a different reply, the change goes with it. New swipes keep it.
 
-Each message's header shows the story time just after that message (🕒 *Thu 14 Mar, 9:42 PM*).
-
-## Time changes
+### Time changes
 
 Tags, the panel's box and `/clock` all accept the same things, and you can combine them:
 
@@ -58,6 +73,20 @@ Tags, the panel's box and `/clock` all accept the same things, and you can combi
 
 Tags whose contents can't be read are left visible in the chat, so you can spot them.
 
+### With Summarize
+
+The clock is already in the prompt when a summary is written (without the tag instructions, so summaries don't get tags). To have summaries record times too, add something like this to the Summarize prompt: *"The story's current date and time is {{scenario_datetime}}. Mention when events happened."*
+
+## Realism Mode
+
+While Realism Mode is on, every reply gets this note:
+
+> (OOC: Realism mode, one line of dialogue and one action only, so it flows like a real conversation.)
+
+Switch it from the ☰ menu at the bottom left, where Regenerate and Continue are. The menu item shows whether it's on, and the ☰ button gets a small dot while it is. You can also use the SillyTweaks panel or `/realism`. You can edit the note, and its depth and role, in the panel.
+
+The note goes into normal replies, swipes, regenerations, continues and impersonations, but never into quiet background prompts such as summaries.
+
 ## Slash commands
 
 - `/clock`: returns the story date and time. `format=time|date|weekday|timeofday|day|iso` returns one part.
@@ -65,48 +94,57 @@ Tags whose contents can't be read are left visible in the chat, so you can spot 
 - `/clock-start 2024-03-14 21:42`: starts or restarts this chat's clock, as of the latest message. `/clock-start now` uses the real time.
 - `/clock-undo`: takes back the last change you made by hand after the latest message.
 - `/clock-stop`: removes the clock from this chat.
+- `/realism on`, `/realism off`, `/realism` (switches it), `/realism status`: return `on` or `off`.
 
 ## Macros
 
-These work anywhere SillyTavern reads macros: character cards, Author's Note, World Info, Quick Replies, and the Summarize prompt. They're empty in chats without a clock.
+These work anywhere SillyTavern reads macros: character cards, Author's Note, World Info, Quick Replies and the Summarize prompt. They're empty in chats without a clock.
 
 `{{scenario_time}}` `{{scenario_date}}` `{{scenario_weekday}}` `{{scenario_timeofday}}` `{{scenario_day}}` `{{scenario_datetime}}` `{{scenario_iso}}`
 
-**With Summarize:** the clock is already in the prompt when a summary is written. To have summaries record times too, add something like this to the Summarize prompt: *"The story's current date and time is {{scenario_datetime}}. Mention when events happened."*
+## Prompt caching
+
+With the default settings, SillyTweaks doesn't get in the way of prompt caching (Claude, OpenAI, DeepSeek and so on). The clock and the Realism Mode note go at depth 0, right after the latest message, so everything before them stays the same from one reply to the next. Swipes send exactly the same prompt as the reply they replace.
+
+What would hurt caching:
+
+- **Moving the clock up the prompt.** Its text changes with every reply, so before or after the main prompt the cache misses on every reply. The panel warns you if you change this.
+- **Putting `{{scenario_*}}` macros early in the prompt** (character card, system prompt). They're fine in the Summarize prompt, which is a separate request.
+- **Claude with `claude.cachingAtDepth: 0`** in SillyTavern's `config.yaml`: each reply re-caches about the last exchange. Use 2.
 
 ## Settings
 
-- **Let the AI move the clock with time tags**: adds the tag instructions to the prompt. Turn it off if you'd rather move time yourself. Quiet background prompts (like summaries) never get the instructions.
-- **Start a clock in new chats automatically**, starting at the real date and time or one you choose.
-- **Each message without a tag adds N minutes**: the default for new clocks. Change an existing chat's value in its panel; the change only applies to later messages.
-- **Time tags in the chat**: hide them, show a small 🕒 badge, or leave them as written.
-- **Show the story time on each message**, **24-hour clock**, **date style**.
-- **Prompt position**: in the chat at a depth (default 0: just after the latest message, where the AI is least likely to miss it), or before or after the main prompt. You can also choose the role.
-- **Clock text** and **time tag instructions**: edit them freely. They use the macros above.
+All in **Extensions → SillyTweaks**:
+
+- **Scenario Clock**: on or off; how time passes; whether the AI may skip time; starting clocks automatically, at the real time or one you choose.
+- **Display**: hide time tags, show them as small 🕒 badges, or leave them as written; the time on each message; 24-hour clock; date style.
+- **Clock prompt**: where it goes (in the chat at a depth, or before or after the main prompt) and as which role; the clock text and the tag instructions. They use the macros above.
+- **Realism Mode**: on or off, the note, and its depth and role.
 
 ## Limits
 
 - Gregorian calendar only, years 1 to 9999. There's no support for fantasy calendars.
 - No time zones. The clock is a wall-clock reading, so daylight saving never moves it.
-- The AI has to cooperate. Most models follow the tag instructions well, especially with the prompt at depth 0. If one doesn't, move the clock yourself, or raise the minutes per message.
+- The AI has to cooperate. Most models follow the tag instructions well, especially at depth 0. If one keeps forgetting, switch **How time passes** to message length, or move the clock yourself.
 
 ## Checking it in SillyTavern
 
-The automated tests cover the time maths, the tag parser, the timeline, the panel and the SillyTavern wiring against a stand-in. A quick check in a real SillyTavern:
+The automated tests cover the time maths, the tag parser, the timeline, the panel, Realism Mode and the SillyTavern wiring against a stand-in. A quick check in a real SillyTavern:
 
 - [ ] Start a new chat. The panel shows a clock, and the wand menu shows **Clock: …**.
-- [ ] Send a message, then open the prompt inspector for the reply (or the terminal log). The last system message is the story clock text, followed by the tag instructions.
-- [ ] Ask the character to skip to the next morning. The reply's tag is hidden, the header shows the new time, and the panel agrees.
+- [ ] Send a message, then open the prompt inspector for the reply. The last system message holds the story clock and asks for a time tag at the end of the reply.
+- [ ] The reply ends with a tag like `[TIME: +2m]`. It's hidden in the chat, and the message header shows the new time.
+- [ ] Ask the character to skip to the next morning. The header and the panel show the morning.
 - [ ] Swipe that reply. The prompt for the new swipe has the time from *before* the old reply.
 - [ ] Delete the reply. The clock goes back.
-- [ ] Type `/clock +1h` and `/clock format=time`.
-- [ ] Put `{{scenario_datetime}}` in the Author's Note and check it in the prompt.
+- [ ] Open ☰ and click **Realism Mode**. It shows as on, and the ☰ button has a dot. The next prompt ends with the Realism Mode note, and the reply is one line of dialogue and one action.
+- [ ] Type `/realism off`, `/clock +1h` and `/clock format=time`.
 
 ## Development
 
-Plain ES modules, type-checked with JSDoc. `index.js` is the only file that talks to SillyTavern; the logic lives in `src/`.
+Plain ES modules, type-checked with JSDoc. `index.js` is the only file that talks to SillyTavern. The clock lives in `src/clock/`, Realism Mode in `src/realism.js`, and the settings and panel in `src/`.
 
 ```sh
 npm install
-npm run check   # type checks and tests
+npm run check   # lint, type checks and tests
 ```

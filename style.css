@@ -1,18 +1,20 @@
-/* Scenario Clock */
+/* SillyTweaks */
 
-/* ---- Time tags in messages ---- */
+/* ---- Scenario Clock: time tags in messages ---- */
 
-#chat.scenario-clock-tags-hide .scenario-clock-tag,
-#chat.scenario-clock-tags-hide .scenario-clock-tag-only {
+#chat.sillytweaks-tags-hide .sillytweaks-clock-tag,
+#chat.sillytweaks-tags-hide .sillytweaks-clock-tag-only,
+#chat.sillytweaks-tags-hide .sillytweaks-clock-tag-break,
+#chat.sillytweaks-tags-badge .sillytweaks-clock-tag-break {
     display: none;
 }
 
-#chat.scenario-clock-tags-badge .scenario-clock-tag {
+#chat.sillytweaks-tags-badge .sillytweaks-clock-tag {
     font-size: 0;
     white-space: nowrap;
 }
 
-#chat.scenario-clock-tags-badge .scenario-clock-tag::before {
+#chat.sillytweaks-tags-badge .sillytweaks-clock-tag::before {
     content: attr(data-label);
     display: inline-block;
     font-size: 0.75em;
@@ -26,72 +28,104 @@
     vertical-align: middle;
 }
 
-/* ---- Story time in message headers ---- */
+/* A tag still streaming in is never shown, whatever the display setting. */
+#chat .sillytweaks-clock-tag-partial {
+    display: none !important;
+}
 
-.scenario-clock-stamp {
+/* ---- Scenario Clock: story time in message headers ---- */
+
+.sillytweaks-clock-stamp {
     margin-left: 0.6em;
     opacity: 0.65;
     white-space: nowrap;
     font-size: calc(var(--mainFontSize, 1rem) * 0.8);
 }
 
-.scenario-clock-stamp::before {
+.sillytweaks-clock-stamp::before {
     content: '\1F552\FE0E';
     margin-right: 0.3em;
 }
 
-/* ---- Settings panel ---- */
+/* ---- Realism Mode ---- */
 
-.scenario-clock-settings h4 {
-    margin: 0.6em 0 0.25em;
+#sillytweaks_realism_option.sillytweaks-on {
+    opacity: 1;
 }
 
-.scenario-clock-settings label {
+#sillytweaks_realism_option.sillytweaks-on i {
+    color: var(--SmartThemeQuoteColor, #e18a24);
+}
+
+/* A dot on the options (☰) button while Realism Mode is on. */
+#options_button.sillytweaks-realism-on::after {
+    content: '';
+    position: absolute;
+    top: 18%;
+    right: 14%;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--SmartThemeQuoteColor, #e18a24);
+    pointer-events: none;
+}
+
+/* ---- Settings panel ---- */
+
+.sillytweaks-settings h3 {
+    margin: 0.4em 0 0.3em;
+}
+
+.sillytweaks-settings h4 {
+    margin: 0.7em 0 0.25em;
+}
+
+.sillytweaks-settings label {
     display: flex;
     flex-direction: column;
     gap: 2px;
     margin: 4px 0;
 }
 
-.scenario-clock-settings label.checkbox_label {
+.sillytweaks-settings label.checkbox_label {
     flex-direction: row;
     align-items: center;
 }
 
-.scenario-clock-settings label.scenario-clock-inline {
+.sillytweaks-settings label.sillytweaks-inline {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
 }
 
-.scenario-clock-inline input[type='number'] {
+.sillytweaks-inline input[type='number'] {
     width: 5em;
     margin: 0;
 }
 
-.scenario-clock-face {
+.sillytweaks-face {
     text-align: center;
     padding: 6px 0 2px;
 }
 
-.scenario-clock-face-time {
+.sillytweaks-face-time {
     font-size: 2em;
     font-variant-numeric: tabular-nums;
     line-height: 1.2;
 }
 
-.scenario-clock-face-date {
+.sillytweaks-face-date {
     opacity: 0.8;
 }
 
-.scenario-clock-face-off {
+.sillytweaks-face-off {
     opacity: 0.5;
 }
 
-.scenario-clock-quick,
-.scenario-clock-row,
-.scenario-clock-pending {
+.sillytweaks-quick,
+.sillytweaks-row,
+.sillytweaks-pending {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -99,37 +133,45 @@
     margin: 4px 0;
 }
 
-.scenario-clock-quick .menu_button,
-.scenario-clock-row .menu_button,
-.scenario-clock-pending .menu_button {
+.sillytweaks-quick .menu_button,
+.sillytweaks-row .menu_button,
+.sillytweaks-pending .menu_button {
     margin: 0;
     width: auto;
     padding: 3px 8px;
 }
 
-.scenario-clock-row input.text_pole,
-.scenario-clock-row label {
+.sillytweaks-row input.text_pole,
+.sillytweaks-row label {
     flex: 1 1 8em;
     min-width: 0;
     margin: 0;
 }
 
-.scenario-clock-settings [hidden] {
+.sillytweaks-settings [hidden] {
     display: none !important;
 }
 
-.scenario-clock-pending small {
+.sillytweaks-pending small {
     flex: 1 1 auto;
 }
 
-.scenario-clock-indent {
+.sillytweaks-indent {
     padding-left: 1.6em;
 }
 
-.scenario-clock-settings details {
+.sillytweaks-settings details {
     margin: 6px 0;
 }
 
-.scenario-clock-settings details summary {
+.sillytweaks-settings details summary {
     cursor: pointer;
+}
+
+.sillytweaks-warning {
+    margin: 6px 0;
+    padding: 6px 8px;
+    border: 1px solid var(--warning, #c9a227);
+    border-radius: 6px;
+    font-size: 0.9em;
 }

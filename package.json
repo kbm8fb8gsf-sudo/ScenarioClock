@@ -1,15 +1,19 @@
 {
-  "name": "sillytavern-scenario-clock",
-  "version": "0.1.0",
-  "description": "SillyTavern extension: keeps the story's own date and time and tells the AI.",
+  "name": "sillytweaks",
+  "version": "0.2.0",
+  "description": "SillyTavern extension: a story clock that keeps in-story time, Realism Mode, and other small tweaks.",
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "eslint .",
     "typecheck": "tsc -p jsconfig.json",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run lint && npm run typecheck && npm run test"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "jsdom": "^30.1.3",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"

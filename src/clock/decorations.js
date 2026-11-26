@@ -10,24 +10,41 @@
 
 import { findTags } from './tags.js';
 
+export const CLASSES = {
+    tag: 'sillytweaks-clock-tag',
+    /** A tag still being streamed in, e.g. "[TIME: +2". */
+    partial: 'sillytweaks-clock-tag-partial',
+    /** A paragraph holding nothing but tags. */
+    tagOnly: 'sillytweaks-clock-tag-only',
+    /** A line break left dangling next to a hidden tag. */
+    tagBreak: 'sillytweaks-clock-tag-break',
+    stamp: 'sillytweaks-clock-stamp',
+    modePrefix: 'sillytweaks-tags-',
+};
+
 const SHOW_TEXT = 4;
 const FILTER_ACCEPT = 1;
 const FILTER_REJECT = 2;
 const FILTER_SKIP = 3;
-const SKIP_INSIDE = '.scenario-clock-tag, textarea, code, pre, script, style';
+/** Never touch text in these. `.scenario-clock-tag` is the old Scenario Clock extension's wrapper. */
+const SKIP_INSIDE = `.${CLASSES.tag}, .scenario-clock-tag, textarea, code, pre, script, style`;
 const MODES = ['hide', 'badge', 'raw'];
+/** The start of a tag at the very end of a message that's still streaming in. */
+const PARTIAL_TAG = /\[\s*tim(?:e\s*(?::[^[\]\n]{0,100})?)?$/i;
 
 /**
  * @typedef {object} ChatView
  * @property {boolean} enabled
  * @property {'hide' | 'badge' | 'raw'} tagDisplay
  * @property {(number | null)[] | null} times The time after each message, by message id.
- * @property {(time: number) => { text: string, title: string }} formatStamp
+ * @property {(time: number, previous: number | null) => { text: string, title: string }} formatStamp
+ *   `previous` is the time after the message before, if it has one.
  */
 
 /**
  * Wraps each valid tag in a span the stylesheet can hide or restyle.
- * @param {Element} container
+ * @param {Element} container A message's .mes_text.
+ * @returns {boolean} Whether anything changed.
  */
 export function wrapTags(container) {
     const doc = container.ownerDocument;
@@ -49,23 +66,60 @@ export function wrapTags(container) {
         if (tags.length === 0) continue;
         const parent = node.parentElement;
         const fragment = doc.createDocumentFragment();
+        /** @type {HTMLElement[]} */
+        const spans = [];
         let position = 0;
         for (const tag of tags) {
             if (tag.index > position) fragment.append(text.slice(position, tag.index));
-            const span = doc.createElement('span');
-            span.className = 'scenario-clock-tag';
-            span.dataset['label'] = `\u{1F552} ${tag.instruction}`;
+            const span = tagSpan(doc, tag.raw, `\u{1F552} ${tag.instruction}`);
             span.title = `Story clock: ${tag.instruction}`;
-            span.textContent = tag.raw;
+            spans.push(span);
             fragment.append(span);
             position = tag.index + tag.raw.length;
         }
         if (position < text.length) fragment.append(text.slice(position));
         node.replaceWith(fragment);
         changed = true;
-        if (parent && isOnlyTags(parent)) parent.classList.add('scenario-clock-tag-only');
+        if (parent && isOnlyTags(parent)) parent.classList.add(CLASSES.tagOnly);
+        spans.forEach(markDanglingBreak);
     }
-    return changed;
+    return wrapPartialTag(container) || changed;
+}
+
+/**
+ * Hides the start of a tag at the very end of a message, e.g. "[TIME: +2" while the reply is
+ * still streaming in, so the tag doesn't flash up before it's complete.
+ * @param {Element} container
+ */
+function wrapPartialTag(container) {
+    const doc = container.ownerDocument;
+    const walker = doc.createTreeWalker(container, SHOW_TEXT);
+    /** @type {Text | null} */
+    let last = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if ((node.nodeValue ?? '').trim() !== '') last = /** @type {Text} */ (node);
+    }
+    if (!last || last.parentElement?.closest(SKIP_INSIDE)) return false;
+    const match = PARTIAL_TAG.exec(last.data.trimEnd());
+    if (!match) return false;
+    const tail = last.splitText(match.index);
+    const span = tagSpan(doc, tail.data, '\u{1F552}');
+    span.classList.add(CLASSES.partial);
+    tail.replaceWith(span);
+    return true;
+}
+
+/**
+ * @param {Document} doc
+ * @param {string} raw
+ * @param {string} label
+ */
+function tagSpan(doc, raw, label) {
+    const span = doc.createElement('span');
+    span.className = CLASSES.tag;
+    span.dataset['label'] = label;
+    span.textContent = raw;
+    return span;
 }
 
 /**
@@ -78,10 +132,33 @@ function isOnlyTags(element) {
         if (child.nodeType === 3 && (child.nodeValue ?? '').trim() !== '') return false;
         if (child.nodeType === 1) {
             const el = /** @type {Element} */ (child);
-            if (!el.classList.contains('scenario-clock-tag') && el.tagName !== 'BR') return false;
+            if (!el.classList.contains(CLASSES.tag) && el.tagName !== 'BR') return false;
         }
     }
     return true;
+}
+
+/**
+ * A tag on its own line at the start or end of a paragraph ("Text<br>[TIME: +2m]") would leave
+ * an empty line behind when hidden, so the line break next to it is marked too.
+ * @param {Element} span
+ */
+function markDanglingBreak(span) {
+    const before = meaningfulSibling(span, 'previousSibling');
+    const after = meaningfulSibling(span, 'nextSibling');
+    if (!after && before?.nodeName === 'BR') /** @type {Element} */ (before).classList.add(CLASSES.tagBreak);
+    else if (!before && after?.nodeName === 'BR') /** @type {Element} */ (after).classList.add(CLASSES.tagBreak);
+}
+
+/**
+ * @param {Node} node
+ * @param {'previousSibling' | 'nextSibling'} direction
+ * @returns {Node | null}
+ */
+function meaningfulSibling(node, direction) {
+    let sibling = node[direction];
+    while (sibling && sibling.nodeType === 3 && (sibling.nodeValue ?? '').trim() === '') sibling = sibling[direction];
+    return sibling;
 }
 
 /**
@@ -93,7 +170,7 @@ export function labelMessages(root, view) {
     for (const message of root.querySelectorAll('.mes[mesid]')) {
         const id = Number(message.getAttribute('mesid'));
         const time = view.enabled && view.times && Number.isInteger(id) ? view.times[id] ?? null : null;
-        let label = message.querySelector('.scenario-clock-stamp');
+        let label = message.querySelector(`.${CLASSES.stamp}`);
         if (time === null) {
             label?.remove();
             continue;
@@ -102,10 +179,11 @@ export function labelMessages(root, view) {
             const anchor = message.querySelector('.ch_name .timestamp') ?? message.querySelector('.ch_name .name_text');
             if (!anchor) continue;
             label = message.ownerDocument.createElement('small');
-            label.className = 'scenario-clock-stamp';
+            label.className = CLASSES.stamp;
             anchor.after(label);
         }
-        const { text, title } = view.formatStamp(time);
+        const previous = view.times?.[id - 1] ?? null;
+        const { text, title } = view.formatStamp(time, previous);
         if (label.textContent !== text) label.textContent = text;
         if (label.getAttribute('title') !== title) label.setAttribute('title', title);
     }
@@ -117,7 +195,7 @@ export function labelMessages(root, view) {
  */
 function setMode(root, mode) {
     for (const other of MODES) {
-        const name = `scenario-clock-tags-${other}`;
+        const name = `${CLASSES.modePrefix}${other}`;
         if (other === mode) {
             if (!root.classList.contains(name)) root.classList.add(name);
         } else if (root.classList.contains(name)) {

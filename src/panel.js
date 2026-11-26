@@ -1,27 +1,35 @@
 // @ts-check
-/** The Scenario Clock panel in SillyTavern's Extensions menu. */
+/** The SillyTweaks panel in SillyTavern's Extensions menu. */
 
-import { DEFAULT_SETTINGS } from './settings.js';
 import {
     dayNumber, formatDate, formatDuration, formatShort, formatTime, formatWeekday, fromIso, fromLocalDate, timeOfDay,
     toIso,
-} from './time.js';
+} from './clock/time.js';
+import { DEFAULT_CLOCK_SETTINGS, DEFAULT_REALISM_SETTINGS, settingAt } from './settings.js';
 
 /**
  * @typedef {object} PanelDeps
- * @property {import('./controller.js').Controller} controller
+ * @property {import('./clock/controller.js').Controller} controller
  * @property {() => import('./settings.js').Settings} getSettings
- * @property {(patch: Partial<import('./settings.js').Settings>) => void} saveSettings
+ * @property {(path: string, value: unknown) => void} saveSetting e.g. ('clock.hour24', true)
  * @property {() => void} onClockChanged Called after the panel changes the clock.
  * @property {(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void} notify
  * @property {(message: string) => Promise<boolean>} confirm
  * @property {() => Date} [now]
  */
 
+/** Defaults for the "Reset to default" buttons, by setting path. */
+const RESETTABLE = {
+    'clock.promptTemplate': DEFAULT_CLOCK_SETTINGS.promptTemplate,
+    'clock.tagTemplate': DEFAULT_CLOCK_SETTINGS.tagTemplate,
+    'clock.tagEveryTemplate': DEFAULT_CLOCK_SETTINGS.tagEveryTemplate,
+    'realism.prompt': DEFAULT_REALISM_SETTINGS.prompt,
+};
+
 /**
  * Describes a clock change for a notice, e.g. "Moved forward 2 hours. It's now Thu 14 Mar, 9:42 PM."
- * @param {import('./controller.js').Change} change
- * @param {import('./time.js').FormatOptions} options
+ * @param {import('./clock/controller.js').Change} change
+ * @param {import('./clock/time.js').FormatOptions} options
  */
 export function describeChange({ before, after }, options) {
     const diff = after - before;
@@ -29,7 +37,7 @@ export function describeChange({ before, after }, options) {
     return `${moved} It's now ${formatShort(after, options)}.`;
 }
 
-export class ClockPanel {
+export class SettingsPanel {
     /** @param {PanelDeps} deps */
     constructor(deps) {
         this.deps = deps;
@@ -56,56 +64,66 @@ export class ClockPanel {
         if (!this.root) return;
         const { controller, getSettings } = this.deps;
         const settings = getSettings();
-        const state = settings.enabled && controller.hasChat() ? controller.state() : null;
+        const clockSettings = settings.clock;
+        const state = clockSettings.enabled && controller.hasChat() ? controller.state() : null;
 
         const faceTime = this.el('[data-role="face-time"]');
         const faceDate = this.el('[data-role="face-date"]');
         const message = this.el('[data-role="message"]');
         if (state) {
             const now = state.timeline.current;
-            faceTime.textContent = formatTime(now, settings);
-            faceDate.textContent = `${formatWeekday(now)}, ${formatDate(now, settings)} · ${timeOfDay(now)} · day ${dayNumber(now, state.timeline.origin)}`;
+            faceTime.textContent = formatTime(now, clockSettings);
+            faceDate.textContent = `${formatWeekday(now)}, ${formatDate(now, clockSettings)} · ${timeOfDay(now)} · day ${dayNumber(now, state.timeline.origin)}`;
             message.textContent = '';
         } else {
             faceTime.textContent = '--:--';
             faceDate.textContent = '';
-            message.textContent = !settings.enabled
-                ? 'Scenario Clock is turned off.'
+            message.textContent = !clockSettings.enabled
+                ? 'The scenario clock is turned off.'
                 : controller.hasChat() ? "This chat doesn't have a clock yet." : 'Open a chat to see its clock.';
         }
-        this.el('[data-role="face"]').classList.toggle('scenario-clock-face-off', !state);
+        this.el('[data-role="face"]').classList.toggle('sillytweaks-face-off', !state);
         this.el('[data-role="running"]').hidden = !state;
-        this.el('[data-role="stopped"]').hidden = Boolean(state) || !settings.enabled || !controller.hasChat();
+        this.el('[data-role="stopped"]').hidden = Boolean(state) || !clockSettings.enabled || !controller.hasChat();
 
         if (state) {
             const pending = controller.pendingOps();
             this.el('[data-role="pending"]').hidden = pending.length === 0;
             this.el('[data-role="pending-text"]').textContent = `Changed by hand after the latest message: ${pending.join(', ')}`;
-            this.fill('[data-role="chat-rate"]', String(controller.minutesPerMessage()));
             this.fillDateTime('restart', state.timeline.current);
         } else if (!this.input('[data-role="start-date"]').value) {
             this.fillDateTime('start', controller.defaultStart());
         }
 
         for (const input of this.root.querySelectorAll('[data-setting]')) {
-            const key = /** @type {keyof import('./settings.js').Settings} */ (input.getAttribute('data-setting'));
-            const value = settings[key];
+            const value = settingAt(settings, input.getAttribute('data-setting') ?? '');
             if (input instanceof HTMLInputElement && input.type === 'checkbox') {
                 input.checked = Boolean(value);
             } else {
                 this.fill(input, String(value));
             }
         }
-        const fixed = fromIso(settings.fixedStart);
+        const fixed = fromIso(clockSettings.fixedStart);
         if (fixed !== null) this.fillDateTime('fixed', fixed);
-        this.el('[data-role="fixed-start"]').hidden = settings.startMode !== 'fixed';
-        this.el('[data-role="depth-box"]').hidden = settings.position !== 'chat';
-        this.el('[data-role="role-box"]').hidden = settings.position !== 'chat';
+
+        const aiPacing = clockSettings.pacing === 'ai';
+        const aiTags = this.input('[data-setting="clock.aiTags"]');
+        aiTags.disabled = aiPacing;
+        if (aiPacing) aiTags.checked = true;
+        this.el('[data-role="fixed-minutes"]').hidden = clockSettings.pacing !== 'fixed';
+        const skips = !aiPacing && clockSettings.aiTags ? ' The AI marks time skips with tags.' : '';
+        this.el('[data-role="pacing-help"]').textContent = PACING_HELP[clockSettings.pacing] + skips;
+        this.el('[data-role="tag-template-box"]').hidden = aiPacing;
+        this.el('[data-role="tag-every-template-box"]').hidden = !aiPacing;
+        this.el('[data-role="fixed-start"]').hidden = clockSettings.startMode !== 'fixed';
+        this.el('[data-role="depth-box"]').hidden = clockSettings.position !== 'chat';
+        this.el('[data-role="role-box"]').hidden = clockSettings.position !== 'chat';
+        this.el('[data-role="cache-warning"]').hidden = clockSettings.position === 'chat' && clockSettings.depth === 0;
     }
 
     bindEvents() {
         const root = /** @type {HTMLElement} */ (this.root);
-        const { controller, saveSettings } = this.deps;
+        const { saveSetting } = this.deps;
 
         root.addEventListener('click', (event) => {
             const target = /** @type {Element | null} */ (event.target);
@@ -113,10 +131,10 @@ export class ClockPanel {
             if (!button) return;
             const change = button.getAttribute('data-change');
             const action = button.getAttribute('data-action');
-            const reset = /** @type {'promptTemplate' | 'tagTemplate' | null} */ (button.getAttribute('data-reset'));
+            const reset = /** @type {keyof typeof RESETTABLE | null} */ (button.getAttribute('data-reset'));
             if (change) void this.adjust(change);
             if (action) void this.runAction(action);
-            if (reset) saveSettings({ [reset]: DEFAULT_SETTINGS[reset] });
+            if (reset && reset in RESETTABLE) saveSetting(reset, RESETTABLE[reset]);
         });
 
         this.input('[data-role="change"]').addEventListener('keydown', (event) => {
@@ -126,17 +144,8 @@ export class ClockPanel {
             }
         });
 
-        this.input('[data-role="chat-rate"]').addEventListener('change', (event) => {
-            const value = Number(/** @type {HTMLInputElement} */ (event.target).value);
-            if (!Number.isFinite(value) || value < 0) return;
-            void this.guard(async () => {
-                await controller.setMinutesPerMessage(Math.min(1440, value));
-                this.deps.onClockChanged();
-            });
-        });
-
         for (const input of root.querySelectorAll('[data-setting]')) {
-            const key = input.getAttribute('data-setting') ?? '';
+            const path = input.getAttribute('data-setting') ?? '';
             const eventName = input instanceof HTMLTextAreaElement || (input instanceof HTMLInputElement && input.type === 'text')
                 ? 'input' : 'change';
             input.addEventListener(eventName, () => {
@@ -145,14 +154,14 @@ export class ClockPanel {
                     : input instanceof HTMLInputElement && input.type === 'number'
                         ? Number(input.value)
                         : /** @type {HTMLInputElement} */ (input).value;
-                saveSettings({ [key]: value });
+                saveSetting(path, value);
             });
         }
 
         for (const part of ['date', 'time']) {
             this.input(`[data-role="fixed-${part}"]`).addEventListener('change', () => {
                 const time = this.readDateTime('fixed');
-                if (time !== null) saveSettings({ fixedStart: toIso(time) });
+                if (time !== null) saveSetting('clock.fixedStart', toIso(time));
             });
         }
     }
@@ -170,7 +179,7 @@ export class ClockPanel {
             case 'undo':
                 await this.guard(async () => {
                     const change = await controller.undo();
-                    if (change) notify(`Undone. ${describeChange(change, this.deps.getSettings())}`, 'info');
+                    if (change) notify(`Undone. ${describeChange(change, this.deps.getSettings().clock)}`, 'info');
                 });
                 return;
             case 'use-now':
@@ -185,7 +194,7 @@ export class ClockPanel {
                 }
                 await this.guard(async () => {
                     await controller.start(time);
-                    notify(`Clock set to ${formatShort(time, this.deps.getSettings())}.`, 'success');
+                    notify(`Clock set to ${formatShort(time, this.deps.getSettings().clock)}.`, 'success');
                 });
                 return;
             }
@@ -204,7 +213,7 @@ export class ClockPanel {
         let ok = false;
         await this.guard(async () => {
             const change = await this.deps.controller.adjust(text);
-            this.deps.notify(describeChange(change, this.deps.getSettings()), 'success');
+            this.deps.notify(describeChange(change, this.deps.getSettings().clock), 'success');
             ok = true;
         });
         return ok;
@@ -263,7 +272,7 @@ export class ClockPanel {
     /** @param {string} selector */
     el(selector) {
         const found = this.root?.querySelector(selector);
-        if (!(found instanceof HTMLElement)) throw new Error(`Scenario Clock: missing ${selector}`);
+        if (!(found instanceof HTMLElement)) throw new Error(`SillyTweaks: missing ${selector}`);
         return found;
     }
 
@@ -272,3 +281,10 @@ export class ClockPanel {
         return /** @type {HTMLInputElement} */ (this.el(selector));
     }
 }
+
+/** @type {Record<import('./clock/pacing.js').PacingMode, string>} */
+const PACING_HELP = {
+    ai: 'The AI ends every reply with a tag like [TIME: +5m], judged from what happened. Your messages add no time of their own; a reply without a tag is timed from its length.',
+    length: 'Each message adds about the time its words take to play out (around 120 words a minute), so longer replies move the clock more.',
+    fixed: 'Each message adds the same number of minutes.',
+};

@@ -4,12 +4,13 @@
  * through the `getContext` passed in, so tests can use a fake.
  */
 
+import { POSITION_VALUES, ROLE_VALUES } from '../settings.js';
 import { applyInstructionText, parseInstruction } from './instructions.js';
-import { buildPrompt, macroValues } from './prompt.js';
-import { POSITION_VALUES, ROLE_VALUES } from './settings.js';
+import { samePacing } from './pacing.js';
+import { buildPrompt, macroValues, tagHelpFor } from './prompt.js';
 import { fromIso, fromLocalDate } from './time.js';
 import {
-    EXTRA_KEY, META_KEY, buildTimeline, clampClock, manualOps, newClock, rateAt, readClock, timeAfter, withRate,
+    EXTRA_KEY, META_KEY, buildTimeline, clampClock, manualOps, newClock, pacingAt, readClock, timeAfter, withPacing,
     writeClock,
 } from './timeline.js';
 
@@ -42,7 +43,7 @@ export const PROMPT_KEY = 'scenario_clock';
 /**
  * @param {object} deps
  * @param {() => ClockContext} deps.getContext
- * @param {() => import('./settings.js').Settings} deps.getSettings
+ * @param {() => import('../settings.js').ClockSettings} deps.getSettings
  * @param {() => Date} [deps.now] The real date and time, for clocks that start "now".
  */
 export function createController({ getContext, getSettings, now = () => new Date() }) {
@@ -93,15 +94,17 @@ export function createController({ getContext, getSettings, now = () => new Date
         const position = POSITION_VALUES[settings.position];
         const role = ROLE_VALUES[settings.role];
         const target = settings.enabled ? timeForGeneration(type) : null;
-        const text = target
-            ? buildPrompt({ ...target, settings, withTagHelp: settings.aiTags && type !== 'quiet' })
-            : '';
+        const text = target ? buildPrompt({ ...target, settings, tagHelp: tagHelpFor(settings, type) }) : '';
         ctx.setExtensionPrompt(PROMPT_KEY, text, position, settings.depth, false, role);
     }
 
     /** @param {string | null} type */
     function setGenerationType(type) {
         generationType = type;
+    }
+
+    function getGenerationType() {
+        return generationType;
     }
 
     /** @returns {Record<string, string> | null} */
@@ -117,6 +120,12 @@ export function createController({ getContext, getSettings, now = () => new Date
         if (!ctx.chatMetadata) throw new Error('Open a chat first.');
         ctx.chatMetadata[META_KEY] = writeClock(clock);
         await ctx.saveMetadata();
+    }
+
+    /** @returns {import('./pacing.js').Pacing} */
+    function settingsPacing() {
+        const settings = getSettings();
+        return { mode: settings.pacing, minutes: settings.minutesPerMessage };
     }
 
     /** The start time for a new clock, from the settings. */
@@ -136,7 +145,7 @@ export function createController({ getContext, getSettings, now = () => new Date
     async function start(time) {
         if (!hasChat()) throw new Error('Open a chat first.');
         const chat = getContext().chat;
-        await saveClock(newClock(time, chat.length - 1, getSettings().minutesPerMessage));
+        await saveClock(newClock(time, chat.length - 1, settingsPacing()));
     }
 
     /**
@@ -148,7 +157,7 @@ export function createController({ getContext, getSettings, now = () => new Date
         const settings = getSettings();
         if (!settings.enabled || !settings.autoStart || !hasChat() || readChatClock()) return false;
         if (getContext().chat.some((message) => message.is_user)) return false;
-        await saveClock(newClock(defaultStart(), -1, settings.minutesPerMessage));
+        await saveClock(newClock(defaultStart(), -1, settingsPacing()));
         return true;
     }
 
@@ -225,19 +234,19 @@ export function createController({ getContext, getSettings, now = () => new Date
         return manualOps(last);
     }
 
-    function minutesPerMessage() {
-        const clock = readChatClock();
-        return clock ? rateAt(clock, getContext().chat.length) : getSettings().minutesPerMessage;
-    }
-
     /**
-     * Changes how long a message with no tag takes, for this chat's future messages only.
-     * @param {number} minutes
+     * Brings this chat's pacing in line with the settings, for its future messages only, so
+     * changing the setting never moves times that were already shown.
+     * @returns {Promise<boolean>} Whether anything changed.
      */
-    async function setMinutesPerMessage(minutes) {
+    async function syncPacing() {
         const clock = readChatClock();
-        if (!clock) return;
-        await saveClock(withRate(clock, getContext().chat.length, minutes));
+        if (!clock) return false;
+        const next = getContext().chat.length;
+        const wanted = settingsPacing();
+        if (samePacing(pacingAt(clock, next), wanted)) return false;
+        await saveClock(withPacing(clock, next, wanted));
+        return true;
     }
 
     return {
@@ -245,6 +254,7 @@ export function createController({ getContext, getSettings, now = () => new Date
         state,
         updatePrompt,
         setGenerationType,
+        getGenerationType,
         currentMacroValues,
         defaultStart,
         start,
@@ -254,8 +264,7 @@ export function createController({ getContext, getSettings, now = () => new Date
         adjust,
         undo,
         pendingOps,
-        minutesPerMessage,
-        setMinutesPerMessage,
+        syncPacing,
     };
 }
 

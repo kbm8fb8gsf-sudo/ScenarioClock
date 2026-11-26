@@ -63,5 +63,5 @@ declare global {
     };
 
     // eslint-disable-next-line no-var
-    var scenarioClockInterceptor: (chat: unknown[], contextSize: number, abort: (immediately: boolean) => void, type?: string) => Promise<void>;
+    var sillyTweaksInterceptor: (chat: unknown[], contextSize: number, abort: (immediately: boolean) => void, type?: string) => Promise<void>;
 }

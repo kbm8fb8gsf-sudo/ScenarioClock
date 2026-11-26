@@ -155,6 +155,13 @@ const text = (message) => (typeof message?.content === 'string' ? message.conten
             check(results, 'swiping back shows the first reply\'s time again (+5 min)', back?.includes(clockText(start, 30)), back);
             await page.click('#chat .last_mes .swipe_right', { force: true });
             await page.waitForTimeout(1200);
+            const icons = await page.$$eval('#chat .mes', (els) => els.map((m) => m.querySelectorAll('.timestamp-icon').length));
+            check(results, "SillyTavern's model icon isn't duplicated by swiping", icons.every((n) => n <= 1), JSON.stringify(icons));
+            const order = await page.$eval('#chat .last_mes .ch_name', (el) => {
+                const stamp = el.querySelector('.timestamp');
+                return stamp?.nextElementSibling?.getAttribute('class') ?? '';
+            });
+            check(results, 'the model icon sits right after the timestamp', !order.includes('sillytweaks'), order);
         });
 
         await step('streaming', async () => {

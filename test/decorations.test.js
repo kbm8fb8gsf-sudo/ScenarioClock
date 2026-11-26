@@ -104,6 +104,29 @@ describe('labelMessages', () => {
         expect(labels[0]?.previousElementSibling?.className).toBe('timestamp');
     });
 
+    it("goes after SillyTavern's model icon, so the icon stays right after the timestamp", () => {
+        const root = element(messageHtml(1, 'b'));
+        const timestamp = /** @type {Element} */ (root.querySelector('.timestamp'));
+        const icon = document.createElement('img');
+        icon.className = 'timestamp-icon';
+        timestamp.after(icon);
+        labelMessages(root, view);
+        expect(timestamp.nextElementSibling).toBe(icon);
+        expect(icon.nextElementSibling?.className).toBe(CLASSES.stamp);
+    });
+
+    it('stays put when SillyTavern adds its icon afterwards', () => {
+        const root = element(messageHtml(1, 'b'));
+        labelMessages(root, view);
+        const timestamp = /** @type {Element} */ (root.querySelector('.timestamp'));
+        const icon = document.createElement('img');
+        icon.className = 'timestamp-icon';
+        timestamp.after(icon);
+        labelMessages(root, view);
+        expect(timestamp.nextElementSibling).toBe(icon);
+        expect(root.querySelectorAll(`.${CLASSES.stamp}`)).toHaveLength(1);
+    });
+
     it('removes labels when times go away', () => {
         const root = element(messageHtml(1, 'b'));
         labelMessages(root, view);

@@ -176,11 +176,13 @@ export function labelMessages(root, view) {
             continue;
         }
         if (!label) {
+            // At the end of the name row, never straight after .timestamp: SillyTavern looks for its
+            // model icon right after the timestamp, and adds a second one if something else is there.
             const anchor = message.querySelector('.ch_name .timestamp') ?? message.querySelector('.ch_name .name_text');
-            if (!anchor) continue;
+            if (!anchor?.parentElement) continue;
             label = message.ownerDocument.createElement('small');
             label.className = CLASSES.stamp;
-            anchor.after(label);
+            anchor.parentElement.append(label);
         }
         const previous = view.times?.[id - 1] ?? null;
         const { text, title } = view.formatStamp(time, previous);

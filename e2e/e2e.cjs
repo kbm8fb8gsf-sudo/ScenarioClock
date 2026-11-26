@@ -37,6 +37,16 @@ const text = (message) => (typeof message?.content === 'string' ? message.conten
             $('#openai_max_context').val(128000).trigger('input');
         });
         await page.waitForTimeout(500);
+        // Start from known settings, whatever an earlier run left behind.
+        await page.evaluate(() => {
+            const settings = SillyTavern.getContext().extensionSettings.sillytweaks;
+            Object.assign(settings.clock, {
+                enabled: true, autoStart: true, startMode: 'real', pacing: 'ai', aiTags: true, tagDisplay: 'hide',
+                showOnMessages: true, hour24: false, dateOrder: 'dmy', position: 'chat', depth: 0, role: 'system',
+            });
+            settings.realism.enabled = false;
+            SillyTavern.getContext().saveSettingsDebounced();
+        });
         check(results, 'context set to 128k', (await page.evaluate(() => SillyTavern.getContext().chatCompletionSettings.openai_max_context)) === 128000);
         // Seraphina's lorebook (Eldoria) swaps entries in and out as words come up in the chat,
         // which changes the start of the prompt by itself. Scan depth 0 keeps that out of the cache check.

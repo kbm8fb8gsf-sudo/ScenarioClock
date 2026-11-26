@@ -15,4 +15,9 @@ export default defineConfig(
         files: ['eslint.config.js', 'vitest.config.js'],
         languageOptions: { globals: globals.node },
     },
+    {
+        // Run in Node; the functions they pass to page.evaluate() run in SillyTavern's page.
+        files: ['e2e/**'],
+        languageOptions: { globals: { ...globals.node, ...globals.browser, SillyTavern: 'readonly', $: 'readonly' } },
+    },
 );

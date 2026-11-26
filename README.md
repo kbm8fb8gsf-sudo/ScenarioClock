@@ -10,7 +10,8 @@ Small additions to [SillyTavern](https://github.com/SillyTavern/SillyTavern):
 Needs SillyTavern 1.19 or newer.
 
 1. In SillyTavern, open **Extensions** (the cubes icon) → **Install extension**.
-2. Paste `https://github.com/kbm8fb8gsf-sudo/SillyTweaks` and click **Install**.
+2. Paste `https://github.com/kbm8fb8gsf-sudo/SillyTweaks` and click **Install just for me** (or **Install**).
+3. SillyTavern warns that it's a third-party extension. Click **Yes, install it**.
 
 **Extensions** gets a **SillyTweaks** section, and the browser console shows `[SillyTweaks] Loaded.`
 
@@ -112,6 +113,8 @@ What would hurt caching:
 - **Putting `{{scenario_*}}` macros early in the prompt** (character card, system prompt). They're fine in the Summarize prompt, which is a separate request.
 - **Claude with `claude.cachingAtDepth: 0`** in SillyTavern's `config.yaml`: each reply re-caches about the last exchange. Use 2.
 
+SillyTavern can also change the start of the prompt by itself, with or without SillyTweaks: when lorebook (World Info) entries switch in and out as the conversation moves on, and when example dialogues get pushed out of a small context as the chat grows.
+
 ## Settings
 
 All in **Extensions → SillyTweaks**:
@@ -129,7 +132,7 @@ All in **Extensions → SillyTweaks**:
 
 ## Checking it in SillyTavern
 
-The automated tests cover the time maths, the tag parser, the timeline, the panel, Realism Mode and the SillyTavern wiring against a stand-in. A quick check in a real SillyTavern:
+The automated tests cover the time maths, the tag parser, the timeline, the panel, Realism Mode and the SillyTavern wiring against a stand-in. SillyTweaks 0.2 was also tested end to end in a real SillyTavern 1.19.1 against a stand-in AI: installing and updating through the Extensions menu, the prompts sent (including prompt caching), hidden tags while streaming, swipes, quiet prompts, Realism Mode, slash commands, reloads, and double installs. A quick check of your own:
 
 - [ ] Start a new chat. The panel shows a clock, and the wand menu shows **Clock: …**.
 - [ ] Send a message, then open the prompt inspector for the reply. The last system message holds the story clock and asks for a time tag at the end of the reply.
@@ -147,4 +150,13 @@ Plain ES modules, type-checked with JSDoc. `index.js` is the only file that talk
 ```sh
 npm install
 npm run check   # lint, type checks and tests
+```
+
+`e2e/` drives a real SillyTavern in headless Chromium (Playwright) against a stand-in AI that records every prompt:
+
+```sh
+node e2e/fake-ai.mjs &                                          # the stand-in AI on port 5001
+node SillyTavern/server.js --browserLaunchEnabled false &       # SillyTavern on port 8000, with Seraphina
+node e2e/setup.cjs                                              # connects to the stand-in, installs SillyTweaks from GitHub
+npm run e2e                                                     # 45 checks
 ```

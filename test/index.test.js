@@ -215,7 +215,7 @@ describe('SillyTweaks in SillyTavern', () => {
         expect(toastr.warning).not.toHaveBeenCalled();
         global.scenarioClockInterceptor = async () => {};
         await st.emit('app_ready');
-        expect(toastr.warning).toHaveBeenCalledWith(expect.stringContaining('old Scenario Clock extension'), 'SillyTweaks');
+        expect(toastr.warning).toHaveBeenCalledWith(expect.stringContaining('old Scenario Clock extension'), 'SillyTweaks', expect.objectContaining({ timeOut: 0 }));
         delete global.scenarioClockInterceptor;
     });
 
@@ -224,7 +224,7 @@ describe('SillyTweaks in SillyTavern', () => {
         vi.resetModules();
         const second = await import('../index.js');
         await second.onActivate();
-        expect(toastr.warning).toHaveBeenLastCalledWith(expect.stringContaining('installed twice'), 'SillyTweaks');
+        expect(toastr.warning).toHaveBeenLastCalledWith(expect.stringContaining('installed twice'), 'SillyTweaks', expect.objectContaining({ timeOut: 0 }));
         expect(document.querySelectorAll('.sillytweaks-settings')).toHaveLength(1);
         expect(document.querySelectorAll('#sillytweaks_realism_option')).toHaveLength(1);
         expect(global.sillyTweaksInterceptor).toBe(interceptor);

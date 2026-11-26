@@ -8,7 +8,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -p jsconfig.json",
     "test": "vitest run",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "e2e": "node e2e/e2e.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

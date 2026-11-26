@@ -111,12 +111,23 @@ if (!IS_DUPLICATE) {
  * @param {'info' | 'success' | 'warning' | 'error'} [level]
  */
 function notify(message, level = 'info') {
-    const toastr = /** @type {Record<string, (text: string, title?: string) => void> | undefined} */ (
+    const toastr = /** @type {Record<string, (text: string, title?: string, options?: object) => void> | undefined} */ (
         /** @type {any} */ (globalThis).toastr
     );
     const show = toastr?.[level];
     if (show) show(message, 'SillyTweaks');
     else console.log(LOG_PREFIX, message);
+}
+
+/**
+ * A warning about how SillyTweaks is installed: it stays until it's clicked, since it shows up
+ * while SillyTavern is still loading and would otherwise be easy to miss.
+ * @param {string} message
+ */
+function warnUntilDismissed(message) {
+    console.warn(LOG_PREFIX, message);
+    const toastr = /** @type {any} */ (globalThis).toastr;
+    toastr?.warning?.(message, 'SillyTweaks', { timeOut: 0, extendedTimeOut: 0, closeButton: true });
 }
 
 /** @param {string} message */
@@ -416,7 +427,7 @@ function bindEvents() {
 /** Scenario Clock 0.1 (this extension's old name) would run alongside and double everything up. */
 function warnAboutOldScenarioClock() {
     if (typeof (/** @type {any} */ (globalThis).scenarioClockInterceptor) !== 'function') return;
-    notify('The old Scenario Clock extension is also installed. SillyTweaks includes it, so delete Scenario Clock in Extensions → Manage extensions.', 'warning');
+    warnUntilDismissed('The old Scenario Clock extension is also installed. SillyTweaks includes it, so delete Scenario Clock in Extensions → Manage extensions.');
 }
 
 async function mountPanel() {
@@ -445,9 +456,7 @@ function startDecorator() {
 /** Hook named in manifest.json; SillyTavern calls it once the extension has loaded. */
 export async function onActivate() {
     if (IS_DUPLICATE) {
-        const message = 'SillyTweaks is installed twice. Delete one copy in Extensions → Manage extensions.';
-        console.warn(LOG_PREFIX, message);
-        notify(message, 'warning');
+        warnUntilDismissed('SillyTweaks is installed twice. Delete one copy in Extensions → Manage extensions.');
         return;
     }
     const c = ctx();
